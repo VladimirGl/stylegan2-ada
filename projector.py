@@ -231,7 +231,7 @@ def project(network_pkl: str, target_fname: str, outdir: str, save_video: bool, 
     target_float = target_uint8.astype(np.float32).transpose([2, 0, 1]) * (2 / 255) - 1
 
     # Initialize projector.
-    proj = Projector(numiters=numiters, masktype=maktype)
+    proj = Projector(numiters=numiters, masktype=masktype)
     proj.set_network(Gs)
     proj.start([target_float])
 
