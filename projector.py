@@ -22,8 +22,8 @@ import dnnlib
 import dnnlib.tflib as tflib
 
 class Projector:
-    def __init__(self):
-        self.num_steps                  = 1000
+    def __init__(self, numiters, masktype='whole'):
+        self.num_steps                  = numiters
         self.dlatent_avg_samples        = 10000
         self.initial_learning_rate      = 0.1
         self.initial_noise_factor       = 0.05
@@ -32,6 +32,7 @@ class Projector:
         self.noise_ramp_length          = 0.75
         self.regularize_noise_weight    = 1e5
         self.verbose                    = True
+        self.masktype                   = masktype
 
         self._Gs                    = None
         self._minibatch_size        = None
@@ -115,7 +116,17 @@ class Projector:
         if self._lpips is None:
             with dnnlib.util.open_url('https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada/pretrained/metrics/vgg16_zhang_perceptual.pkl') as f:
                 self._lpips = pickle.load(f)
-        self._dist = self._lpips.get_output_for(proc_images_expr, self._target_images_var)
+
+        if self.masktype == 'whole':
+            self._dist = self._lpips.get_output_for(proc_images_expr, self._target_images_var)
+        elif self.masktype == 'top':
+            self._dist = self._lpips.get_output_for(proc_images_expr[:, :, :128], self._target_images_var[:, :, 128:])
+        elif self.masktype == 'bottom':
+            self._dist = self._lpips.get_output_for(proc_images_expr[:, :, 128:], self._target_images_var[:, :, :128])
+        elif self.masktype == 'left':
+            self._dist = self._lpips.get_output_for(proc_images_expr[:, :, :, :128], self._target_images_var[:, :, :, 128:])
+        elif self.masktype == 'right':
+            self._dist = self._lpips.get_output_for(proc_images_expr[:, :, :, 128:], self._target_images_var[:, :, :, :128])
         self._loss = tf.reduce_sum(self._dist)
 
         # Build noise regularization graph.
@@ -202,7 +213,7 @@ class Projector:
 
 #----------------------------------------------------------------------------
 
-def project(network_pkl: str, target_fname: str, outdir: str, save_video: bool, seed: int):
+def project(network_pkl: str, target_fname: str, outdir: str, save_video: bool, seed: int, numiters: int, masktype: str):
     # Load networks.
     tflib.init_tf({'rnd.np_random_seed': seed})
     print('Loading networks from "%s"...' % network_pkl)
@@ -220,7 +231,7 @@ def project(network_pkl: str, target_fname: str, outdir: str, save_video: bool, 
     target_float = target_uint8.astype(np.float32).transpose([2, 0, 1]) * (2 / 255) - 1
 
     # Initialize projector.
-    proj = Projector()
+    proj = Projector(numiters=numiters, masktype=maktype)
     proj.set_network(Gs)
     proj.start([target_float])
 
@@ -276,8 +287,10 @@ def main():
 
     parser.add_argument('--network',     help='Network pickle filename', dest='network_pkl', required=True)
     parser.add_argument('--target',      help='Target image file to project to', dest='target_fname', required=True)
+    parser.add_argument('--numiter',     help='Number of iterations', type=int, default=1000)
     parser.add_argument('--save-video',  help='Save an mp4 video of optimization progress (default: true)', type=_str_to_bool, default=True)
     parser.add_argument('--seed',        help='Random seed', type=int, default=303)
+    parser.add_argument('--masktype',    help='Mask part used', type=str, default='whole')
     parser.add_argument('--outdir',      help='Where to save the output images', required=True, metavar='DIR')
     project(**vars(parser.parse_args()))
 
